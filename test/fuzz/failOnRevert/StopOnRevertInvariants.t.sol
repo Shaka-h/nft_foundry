@@ -23,10 +23,6 @@ contract StopOnRevertInvariants is StdInvariant, Test {
     DecentralizedStableCoin public dsc;
     HelperConfig public helperConfig;
 
-    address public ethUsdPriceFeed;
-    address public btcUsdPriceFeed;
-    address public weth;
-    address public wbtc;
 
     uint256 amountCollateral = 10 ether;
     uint256 amountToMint = 100 ether;

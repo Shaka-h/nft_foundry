@@ -9,20 +9,14 @@ import { DSCEngine } from "../src/DSCEngine.sol";
 contract DeployDSC is Script {
     address[] public tokenAddresses;
     address[] public priceFeedAddresses;
+    uint256 public DEFAULT_ANVIL_PRIVATE_KEY = 0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80;
 
-    function run() external returns (DecentralizedStableCoin, DSCEngine, HelperConfig) {
-        HelperConfig helperConfig = new HelperConfig(); // This comes with our mocks!
-
-        (address wethUsdPriceFeed, address wbtcUsdPriceFeed, address weth, address wbtc, uint256 deployerKey) =
-            helperConfig.activeNetworkConfig();
-        tokenAddresses = [weth, wbtc];
-        priceFeedAddresses = [wethUsdPriceFeed, wbtcUsdPriceFeed];
-
-        vm.startBroadcast(deployerKey);
+    function run() external returns (DecentralizedStableCoin, DSCEngine) {
+        vm.startBroadcast(DEFAULT_ANVIL_PRIVATE_KEY);
         DecentralizedStableCoin dsc = new DecentralizedStableCoin();
-        DSCEngine dscEngine = new DSCEngine(tokenAddresses, priceFeedAddresses, address(dsc));
+        DSCEngine dscEngine = new DSCEngine(address(dsc));
         dsc.transferOwnership(address(dscEngine));
         vm.stopBroadcast();
-        return (dsc, dscEngine, helperConfig);
+        return (dsc, dscEngine);
     }
 }
