@@ -22,9 +22,8 @@
 
 // SPDX-License-Identifier: MIT
 
-pragma solidity 0.8.19;
+pragma solidity 0.8.20;
 
-import { OracleLib, AggregatorV3Interface } from "./libraries/OracleLib.sol";
 import { ReentrancyGuard } from "@openzeppelin/contracts/security/ReentrancyGuard.sol";
 import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import { DecentralizedStableCoin } from "./DecentralizedStableCoin.sol";
@@ -58,35 +57,48 @@ contract DSCEngine is ReentrancyGuard {
     error DSCEngine__TokenNotAllowed(uint8 token);
     error DSCEngine__TransferFailed();
     error DSCEngine__MintFailed();
+    error DSCEngine__TransactionMinted();
+    error DSCEngine__FailedToApprove();
 
-
-    ///////////////////
-    // Types
-    ///////////////////
-    using OracleLib for AggregatorV3Interface;
 
     ///////////////////
     // State Variables
     ///////////////////
     DecentralizedStableCoin private immutable i_dsc;
+    uint256 private constant TO_WEI = 1e18;
 
     enum CollateralToken {
         TSH,
         ALP
     }
 
+    enum TransactionStatus {
+        PENDING,
+        COMPLETED
+    }
+
+
+    struct transaction {
+        string transactionId;
+        TransactionStatus transactionStatus;
+    }
 
     /// @dev Amount of collateral deposited by user
     mapping(address user => mapping(CollateralToken tokenType => uint256 amount)) private s_collateralDeposited;
     /// @dev Amount of DSC minted by user
     mapping(address user => uint256 amount) private s_DSCMinted;
 
+    mapping ( address user => transaction[]) public s_transactions;
+
+    mapping(address => mapping(string => TransactionStatus)) public transactionStatusById;
+
 
     ///////////////////
     // Events
     ///////////////////
-    event CollateralDeposited(address indexed user, CollateralToken indexed token, uint256 indexed amount);
+    event CollateralDeposited(address indexed user, CollateralToken indexed token, uint256 indexed amount, string transactionId);
     event CollateralRedeemed(address indexed redeemFrom, address indexed redeemTo, CollateralToken token, uint256 amount); // if
+    event tokenMinted(address indexed user, string transactionId, uint256 indexed amount);
 
     ///////////////////
     // Modifiers
@@ -96,7 +108,7 @@ contract DSCEngine is ReentrancyGuard {
             revert DSCEngine__NeedsMoreThanZero();
         }
         _;
-    }
+    } 
 
     modifier isAllowedToken(CollateralToken token) {
         if (uint8(token) >= uint8(CollateralToken.ALP)) {
@@ -124,12 +136,13 @@ contract DSCEngine is ReentrancyGuard {
     function depositCollateralAndMintDsc(
         CollateralToken token,
         uint256 amountCollateral,
-        uint256 amountDscToMint
+        uint256 amountDscToMint,
+        string memory transactionId
     )
         external
     {
-        depositCollateral(token, amountCollateral);
-        mintDsc(amountDscToMint);
+        depositCollateral(token, amountCollateral, transactionId);
+        mintDsc(amountDscToMint, transactionId);
     }
 
     /*
@@ -169,6 +182,11 @@ contract DSCEngine is ReentrancyGuard {
         _redeemCollateral(tokenCollateralAddress, amountCollateral, msg.sender, msg.sender);
     }
 
+    function approve(uint256 amount) public moreThanZero(amount) nonReentrant{
+        uint256 amountInWei = amount * TO_WEI;
+        i_dsc.approve(address(this), amountInWei);
+    }
+
     /*
      * @notice careful! You'll burn your DSC here! Make sure you want to do this...
      * @dev you might want to use this if you're nervous you might get liquidated and want to just burn
@@ -186,13 +204,30 @@ contract DSCEngine is ReentrancyGuard {
      * @param amountDscToMint: The amount of DSC you want to mint
      * You can only mint DSC if you hav enough collateral
      */
-    function mintDsc(uint256 amountDscToMint) public moreThanZero(amountDscToMint) nonReentrant {
+    function mintDsc(uint256 amountDscToMint, string memory transactionId) public moreThanZero(amountDscToMint) nonReentrant {
+
+        // Ensure user has such transaction and its status is not already minted
+
+        if (transactionStatusById[msg.sender][transactionId] != TransactionStatus.PENDING) {
+            revert DSCEngine__TransactionMinted();
+        }
+
         s_DSCMinted[msg.sender] += amountDscToMint;
-        bool minted = i_dsc.mint(msg.sender, amountDscToMint);
+        uint256 amountInWei = amountDscToMint * TO_WEI;
+        bool minted = i_dsc.mint(msg.sender, amountInWei);
+        transactionStatusById[msg.sender][transactionId] = TransactionStatus.COMPLETED;
 
         if (minted != true) {
             revert DSCEngine__MintFailed();
         }
+
+        emit tokenMinted(msg.sender, transactionId, amountDscToMint);
+    }
+
+    function transferWei(address to, uint256 amountDscToTransfer) public  moreThanZero(amountDscToTransfer) nonReentrant{
+        // address owner = msg.sender;
+        uint256 amount = amountDscToTransfer * TO_WEI;
+        i_dsc.transfer(to, amount);
     }
 
     /*
@@ -201,7 +236,8 @@ contract DSCEngine is ReentrancyGuard {
      */
     function depositCollateral(
         CollateralToken token,
-        uint256 amountCollateral
+        uint256 amountCollateral,
+        string memory transactionId
     )
         public
         moreThanZero(amountCollateral)
@@ -209,13 +245,18 @@ contract DSCEngine is ReentrancyGuard {
         isAllowedToken(token)
     {
         s_collateralDeposited[msg.sender][token] += amountCollateral;
-        emit CollateralDeposited(msg.sender, token, amountCollateral);
 
-        // Alp as collateral will be added here
-        // bool success = IERC20(token).transferFrom(msg.sender, address(this), amountCollateral);
-        // if (!success) {
-        //     revert DSCEngine__TransferFailed();
-        // }
+        s_transactions[msg.sender].push(transaction({
+            transactionId: transactionId,
+            transactionStatus: TransactionStatus.PENDING
+        }));
+
+        emit CollateralDeposited(msg.sender, token, amountCollateral, transactionId);
+    }
+
+
+    function getTransactionStatus(string memory transactionId) view external returns (TransactionStatus) {
+        return transactionStatusById[msg.sender][transactionId];
     }
 
     ///////////////////
@@ -242,12 +283,22 @@ contract DSCEngine is ReentrancyGuard {
     function _burnDsc(uint256 amountDscToBurn, address onBehalfOf, address dscFrom) private {
         s_DSCMinted[onBehalfOf] -= amountDscToBurn;
 
-        bool success = i_dsc.transferFrom(dscFrom, address(this), amountDscToBurn);
-        // This conditional is hypothetically unreachable
+        // // bool approve = i_dsc.approve(address(this), amountDscToBurn);
+        // if (!approve) {
+        //     revert DSCEngine__FailedToApprove();
+        // }
+        uint256 amountInWei = amountDscToBurn * TO_WEI;
+        bool success = i_dsc.transferFrom(dscFrom, address(this), amountInWei);
+        // This conditional is hypothetically unreachablea
         if (!success) {
             revert DSCEngine__TransferFailed();
         }
-        i_dsc.burn(amountDscToBurn);
+        i_dsc.burn(amountInWei);
+    }
+
+    function balanceOf(address account) public view returns (uint256) {
+        uint256 from_WEI = i_dsc.balanceOf(account) / TO_WEI;
+        return from_WEI;
     }
 
     //////////////////////////////

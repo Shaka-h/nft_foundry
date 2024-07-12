@@ -41,7 +41,16 @@ ifeq ($(findstring --network sepolia,$(ARGS)),--network sepolia)
 	NETWORK_ARGS := --rpc-url $(SEPOLIA_RPC_URL) --private-key $(PRIVATE_KEY) --broadcast --verify --etherscan-api-key $(ETHERSCAN_API_KEY) -vvvv
 endif
 
-deploy:
-	@forge script script/DeployDSC.s.sol:DeployDSC $(NETWORK_ARGS)
+deployMarketPlace:
+	@forge script script/deployNftMarketPlace.s.sol:DeployNFTMarket $(NETWORK_ARGS) --ffi
 
+
+deployMarketFactory:
+	@forge script script/deployNftMarketFactory.s.sol:DeploynftFactory $(NETWORK_ARGS)
+
+deployAuctionPlace:
+	@forge script script/deployNftAuction.s.sol:DeployNFTMarket $(NETWORK_ARGS)
+
+deployDSC:
+	@forge script script/DeployDSC.s.sol:DeployDSC $(NETWORK_ARGS)
 
