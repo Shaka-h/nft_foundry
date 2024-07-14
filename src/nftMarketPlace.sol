@@ -9,6 +9,10 @@ import "@openzeppelin/contracts/security/ReentrancyGuard.sol";
 import "./DSCEngine.sol";
 
 contract NFTMarket is ReentrancyGuard, AccessControl {
+
+    error Price_Must_Be_Above_Zero();
+
+
     using SafeMath for uint256;
     using Counters for Counters.Counter;
     Counters.Counter private _itemIds; //total number of items ever created
@@ -16,7 +20,6 @@ contract NFTMarket is ReentrancyGuard, AccessControl {
     Counters.Counter private _offerID;
     Counters.Counter private _auctionID;
     Counters.Counter private _auctionsClosed;
-    bytes32 public constant GOVERN_ROLE = keccak256("GOVERN_ROLE");
     address payable current_owner; //mmiliki wa item at any time t
     address payable seller; //anayetengeneza item kwenye market
     address payable TRA = payable(0x435C67b768aEDF84c9E6B00a4E8084dD7f1bc5FF);
@@ -92,6 +95,7 @@ contract NFTMarket is ReentrancyGuard, AccessControl {
     mapping (address => sales[]) public mySales;
     mapping(uint256 => Buyer[]) public buyersMadeToItem;
     mapping (address => taxes[]) public mytaxes;
+    mapping (address => uint256[]) private myItemsID;
 
     //log message (when Item is sold)
     event MarketItemCreated (
@@ -144,8 +148,10 @@ contract NFTMarket is ReentrancyGuard, AccessControl {
         address nftContract,
         uint256 tokenId,
         uint price) public payable nonReentrant{
-         
-        require(price > 0, "Price must be above zero");
+        
+        if (price <= 0) {
+            revert Price_Must_Be_Above_Zero();
+        }
 
         _itemIds.increment(); //add 1 to the total number of items ever created
         uint256 itemId = _itemIds.current();
@@ -165,6 +171,7 @@ contract NFTMarket is ReentrancyGuard, AccessControl {
              actualpayment,
              false
         );
+        myItemsID[msg.sender].push(itemId);
 
         //transfer ownership of the nft to the contract itself
         IERC721(nftContract).transferFrom(msg.sender, address(this), tokenId);
@@ -612,32 +619,15 @@ contract NFTMarket is ReentrancyGuard, AccessControl {
     }
     
     /// @notice fetch list of NFTS owned/bought by this user
-    function fetchMyNFTs() public view returns (MarketItem[] memory){
+    function fetchMyNFTs() public view returns (uint256[] memory){
         //get total number of items ever created
-        uint totalItemCount = _itemIds.current();
+        return myItemsID[msg.sender];
+    }
 
-        uint itemCount = 0;
-        uint currentIndex = 0;
-
-
-        for(uint i = 0; i < totalItemCount; i++){
-            //get only the items that this user has bought/is the owner
-            if(idMarketItem[i+1].owner == msg.sender){
-                itemCount += 1; //total length
-            }
-        }
-
-        MarketItem[] memory items = new MarketItem[](itemCount);
-        for(uint i = 0; i < totalItemCount; i++){
-            if(idMarketItem[i+1].owner == msg.sender){
-                uint currentId = idMarketItem[i+1].itemId;
-                MarketItem storage currentItem = idMarketItem[currentId];
-                items[currentIndex] = currentItem;
-                currentIndex += 1;
-            }
-        }
-        return items;
-
+    /// @notice fetch list of NFTS owned/bought by this user
+    function fetchMarketItemById(uint256 itemId) public view returns (MarketItem memory){
+        //get total number of items ever created
+        return idMarketItem[itemId];
     }
 
 

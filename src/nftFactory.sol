@@ -24,7 +24,7 @@ contract MyCollection is ERC721URIStorage {
     address public marketContractAddress;
 
 
-    string[] public allCollectionTokens;
+    uint256[] public allCollectionTokens;
     mapping (uint256 => string) tokenURIById;
 
     event tokenCreated(string tokenURI, uint256 itemId, uint256 time);
@@ -43,7 +43,7 @@ contract MyCollection is ERC721URIStorage {
         _mint(msg.sender, newItemId); // Mint the token to the caller
         _setTokenURI(newItemId, tokenURI); // Set the token URI
 
-        allCollectionTokens.push(tokenURI); // Add the new token ID to the array
+        allCollectionTokens.push(newItemId); // Add the new token ID to the array
         tokenURIById[newItemId] = tokenURI; // Store the token URI in the mapping
         setApprovalForAll(marketContractAddress, true); //grant transaction permission to marketplace
         emit tokenCreated(tokenURI, newItemId, block.timestamp);
@@ -51,7 +51,7 @@ contract MyCollection is ERC721URIStorage {
         return newItemId; // Return the new token ID
     }
 
-    function getAllCollectionTokens() external view returns (string[] memory) {
+    function getAllCollectionTokens() external view returns (uint256[] memory) {
         return allCollectionTokens; 
     }
 
