@@ -291,7 +291,7 @@ contract NFTMarket is ReentrancyGuard, AccessControl {
         uint256 actualPayment = idMarketItem[itemID].price; 
 
         // Transfer payment from buyer to seller
-        // coin.transfer(idMarketItem[itemID].seller, buyPrice);
+        coin.transfer(idMarketItem[itemID].seller, idMarketItem[itemID].price);
 
         // Transfer NFT ownership from seller to buyer
         IERC721(nftContractAddress).transferFrom(address(this), msg.sender, tokenId);
