@@ -20,6 +20,7 @@ contract NFTMarket is ReentrancyGuard, AccessControl {
     Counters.Counter private _offerID;
     Counters.Counter private _auctionID;
     Counters.Counter private _auctionsClosed;
+    uint256 public _totalTax;  // Change to uint256 for accumulated tax
     address payable current_owner; //mmiliki wa item at any time t
     address payable seller; //anayetengeneza item kwenye market
     address payable TRA = payable(0x435C67b768aEDF84c9E6B00a4E8084dD7f1bc5FF);
@@ -78,13 +79,14 @@ contract NFTMarket is ReentrancyGuard, AccessControl {
     }
 
     struct taxes{
-       uint256 itemId;
-       uint256 tokenId;
-       address from;
-       address to;
-       uint256 price; 
-       uint256 tax;
-       uint256 total;
+        uint256 itemId;
+        uint256 tokenId;
+        address from;
+        address to;
+        uint256 price; 
+        uint256 tax;
+        uint256 total;
+        uint256 time;
     }
 
 
@@ -96,6 +98,8 @@ contract NFTMarket is ReentrancyGuard, AccessControl {
     mapping(uint256 => Buyer[]) public buyersMadeToItem;
     mapping (address => taxes[]) public mytaxes;
     mapping (address => uint256[]) private myItemsID;
+
+    taxes[] public allTaxes;
 
     //log message (when Item is sold)
     event MarketItemCreated (
@@ -300,6 +304,8 @@ contract NFTMarket is ReentrancyGuard, AccessControl {
         idMarketItem[itemID].owner = payable(msg.sender);
         idMarketItem[itemID].sold = true;
         _itemsSold.increment();
+        _totalTax = _totalTax.add(tax);  // Accumulate the tax
+
 
         emit itemSold(
             itemID,
@@ -319,14 +325,15 @@ contract NFTMarket is ReentrancyGuard, AccessControl {
             total
         );
 
-        mytaxes[msg.sender].push(taxes(
+        allTaxes.push(taxes(
             itemID,
             tokenId,
             msg.sender,
             idMarketItem[itemID].seller,
             actualPayment,
             tax,
-            total
+            total,
+            block.timestamp
         ));
 
         mySales[msg.sender].push(sales(
@@ -500,7 +507,8 @@ contract NFTMarket is ReentrancyGuard, AccessControl {
             idMarketItem[auctionID].seller,
             offerPrice,
             tax,
-            actualpayment
+            actualpayment,
+            block.timestamp
         ));
     }
 
@@ -630,5 +638,9 @@ contract NFTMarket is ReentrancyGuard, AccessControl {
         return idMarketItem[itemId];
     }
 
+    function getAllTaxes() public view returns (taxes[] memory) {
+        return allTaxes;
+    }
+    
 
 }
