@@ -4,9 +4,7 @@ import "@openzeppelin/contracts/access/AccessControl.sol";
 import "@openzeppelin/contracts/utils/Counters.sol";
 import "@openzeppelin/contracts/token/ERC721/ERC721.sol";
 import "@openzeppelin/contracts/utils/math/SafeMath.sol";
- //prevents re-entrancy attacks
 import "@openzeppelin/contracts/security/ReentrancyGuard.sol";
-import "./DSCEngine.sol";
 
 contract NFTMarket is ReentrancyGuard, AccessControl {
 
@@ -23,8 +21,7 @@ contract NFTMarket is ReentrancyGuard, AccessControl {
     uint256 public _totalTax;  // Change to uint256 for accumulated tax
     address payable current_owner; //mmiliki wa item at any time t
     address payable seller; //anayetengeneza item kwenye market
-    address payable TRA = payable(0x435C67b768aEDF84c9E6B00a4E8084dD7f1bc5FF);
-    DSCEngine private coin;
+    address payable TRA = payable(0x15d34AAf54267DB7D7c367839AAf71A00a2C6A65);
 
     struct MarketItem {
         uint itemId;
@@ -142,8 +139,7 @@ contract NFTMarket is ReentrancyGuard, AccessControl {
        uint256 total
     );
 
-    constructor(DSCEngine _coin) {
-        coin = _coin;
+    constructor() {
         current_owner = payable(msg.sender);
     }
 
@@ -282,77 +278,101 @@ contract NFTMarket is ReentrancyGuard, AccessControl {
         return true;
     }
 
-    function buyItem (uint256 itemID) public  nonReentrant {
-        
-        require(idMarketItem[itemID].owner != msg.sender, "Item owner cant buy the item");
+    function buyItem(uint256 itemID) public nonReentrant payable returns(uint256){
+        require(idMarketItem[itemID].owner != msg.sender, "Item owner can't buy the item");
         require(idMarketItem[itemID].sold == false, "Item already sold");
-        
+
         // Extract necessary details
         uint256 tokenId = idMarketItem[itemID].tokenId;
         address nftContractAddress = idMarketItem[itemID].nftContract;
+        uint256 actualPayment = idMarketItem[itemID].total;
         uint256 tax = idMarketItem[itemID].tax;
         uint256 total = idMarketItem[itemID].total; 
-        uint256 actualPayment = idMarketItem[itemID].price; 
+        uint256 actualPaymentWei = actualPayment * 1e18;
+        uint256 totalWei = total * 1e18;
+        uint256 taxWei = tax * 1e18;
+        address seller_owner =  idMarketItem[itemID].seller;
+        address payable owner = idMarketItem[itemID].owner;
 
-        // Transfer payment from buyer to seller
-        coin.transfer(idMarketItem[itemID].seller, idMarketItem[itemID].price);
+        // Ensure the buyer has sent the correct payment
+        // require(msg.value == totalWei, "Incorrect payment amount");
 
-        // Transfer NFT ownership from seller to buyer
-        IERC721(nftContractAddress).transferFrom(address(this), msg.sender, tokenId);
+        // // Transfer payment from buyer to seller
+        // (bool sent, ) = idMarketItem[itemID].seller.call{value: msg.value}("");
+        // require(sent, "Failed to send Ether to seller");
 
-        // Update item ownership and sold status
-        idMarketItem[itemID].owner = payable(msg.sender);
-        idMarketItem[itemID].sold = true;
-        _itemsSold.increment();
-        _totalTax = _totalTax.add(tax);  // Accumulate the tax
+        // require(msg.value == total, "Incorrect payment amount");
+
+        // Transfer payment from contract to seller
+        (bool sentToSeller, ) = seller_owner.call{value: actualPaymentWei}("");
+        require(sentToSeller, "Failed to send Ether to seller");
+
+        // Calculate the remaining balance (which is considered as tax here)
+        uint256 remainingBalance = address(this).balance;
+        // uint256 remainingBalance = address(this).balance;
+
+         // Transfer tax to another address (TRA)
+        (bool sentToTRA, ) = TRA.call{value: taxWei}("");
+        require(sentToTRA, "Failed to send tax to TRA");
+
+        // // Transfer NFT ownership from contract to buyer
+        // IERC721(nftContractAddress).transferFrom(address(this), msg.sender, tokenId);
+
+        // // Update item ownership and sold status
+        // idMarketItem[itemID].owner = payable(msg.sender);
+        // idMarketItem[itemID].sold = true;
+        // _itemsSold.increment();
+        // _totalTax = _totalTax.add(tax);  // Accumulate the tax
 
 
         emit itemSold(
             itemID,
-            idMarketItem[itemID].seller,
+            seller_owner,
             msg.sender,
-            actualPayment,
+            actualPaymentWei,
             block.timestamp
         );
 
-        emit taxation (
-            itemID,
-            tokenId,
-            msg.sender,
-            idMarketItem[itemID].seller,
-            actualPayment,
-            tax,
-            total
-        );
+        // emit taxation (
+        //     itemID,
+        //     tokenId,
+        //     msg.sender,
+        //     seller_owner,
+        //     actualPayment,
+        //     tax,
+        //     total
+        // );
 
-        allTaxes.push(taxes(
-            itemID,
-            tokenId,
-            msg.sender,
-            idMarketItem[itemID].seller,
-            actualPayment,
-            tax,
-            total,
-            block.timestamp
-        ));
+        // allTaxes.push(taxes(
+        //     itemID,
+        //     tokenId,
+        //     msg.sender,
+        //     seller_owner,
+        //     actualPayment,
+        //     tax,
+        //     total,
+        //     block.timestamp
+        // ));
 
-        mySales[msg.sender].push(sales(
-            itemID,
-            tokenId,
-            idMarketItem[itemID].owner,
-            total
-        )); 
+        // mySales[msg.sender].push(sales(
+        //     itemID,
+        //     tokenId,
+        //     owner,
+        //     total
+        // )); 
 
-        buyersMadeToItem[itemID].push(Buyer(
-            idMarketItem[itemID].nftContract,
-            itemID,
-            actualPayment,
-            tax,
-            total,
-            idMarketItem[itemID].seller,
-            idMarketItem[itemID].owner,
-            block.timestamp
-        ));     
+        // buyersMadeToItem[itemID].push(Buyer(
+        //     nftContractAddress,
+        //     itemID,
+        //     actualPayment,
+        //     tax,
+        //     total,
+        //     seller_owner,
+        //     owner,
+        //     block.timestamp
+        // ));
+
+        return remainingBalance;     
     }
  
     function getAllSalesMade(uint256 itemId) external view returns (Buyer[] memory) {
@@ -398,8 +418,8 @@ contract NFTMarket is ReentrancyGuard, AccessControl {
             previousOffers[previousOffers.length - 1].offerAccepted = false;
 
             // Transfer payment from contract to previousOfferer
-            coin.transferWei(previousOffers[previousOffers.length - 1].offerer, previousOffers[previousOffers.length - 1].offerPrice);
-
+            (bool sent, ) = previousOffers[previousOffers.length - 1].offerer.call{value: previousOffers[previousOffers.length - 1].offerPrice}("");
+            require(sent, "Failed to send Ether");
             // previousOffers[previousOffers.length - 1].offerer.transfer(previousOffers[previousOffers.length - 1].offerPrice);
         }
 
@@ -600,31 +620,31 @@ contract NFTMarket is ReentrancyGuard, AccessControl {
         return items; //return array of all unsold items
     }
 
-    function fetchAuctionItemsUnsold() public view returns (AuctionItem[] memory){
-        uint auctionCount = _auctionID.current(); //total number of items ever created
-        //total number of items that are unsold = total items ever created - total items ever sold
-        uint openAuctionCount = auctionCount - _auctionsClosed.current();
-       uint currentIndex = 0;
+    // function fetchAuctionItemsUnsold() public view returns (AuctionItem[] memory){
+    //     uint auctionCount = _auctionID.current(); //total number of items ever created
+    //     //total number of items that are unsold = total items ever created - total items ever sold
+    //     uint openAuctionCount = auctionCount - _auctionsClosed.current();
+    //    uint currentIndex = 0;
 
-        AuctionItem[] memory auction =  new AuctionItem[](openAuctionCount);
+    //     AuctionItem[] memory auction =  new AuctionItem[](openAuctionCount);
 
-        //loop through all items ever created
-        for(uint i = 0; i < auctionCount; i++){
+    //     //loop through all items ever created
+    //     for(uint i = 0; i < auctionCount; i++){
 
-            //get only unsold item
-            //check if the item has not been sold
-            //by checking if the owner field is empty
-            if(idAuctionItem[i+1].sold == false ){
-                //yes, this item has never been sold
-                uint currentId = idAuctionItem[i + 1].auctionID;
-                AuctionItem storage currentAuction = idAuctionItem[currentId];
-                auction[currentIndex] = currentAuction;
-                currentIndex += 1;
+    //         //get only unsold item
+    //         //check if the item has not been sold
+    //         //by checking if the owner field is empty
+    //         if(idAuctionItem[i+1].sold == false ){
+    //             //yes, this item has never been sold
+    //             uint currentId = idAuctionItem[i + 1].auctionID;
+    //             AuctionItem storage currentAuction = idAuctionItem[currentId];
+    //             auction[currentIndex] = currentAuction;
+    //             currentIndex += 1;
 
-            }
-        }
-        return auction; //return array of all unsold items
-    }
+    //         }
+    //     }
+    //     return auction; //return array of all unsold items
+    // }
     
     /// @notice fetch list of NFTS owned/bought by this user
     function fetchMyNFTs() public view returns (uint256[] memory){
@@ -638,9 +658,11 @@ contract NFTMarket is ReentrancyGuard, AccessControl {
         return idMarketItem[itemId];
     }
 
-    function getAllTaxes() public view returns (taxes[] memory) {
-        return allTaxes;
-    }
+    // function getAllTaxes() public view returns (taxes[] memory) {
+    //     return allTaxes;
+    // }
     
+
+ 
 
 }

@@ -9,10 +9,10 @@ contract DeployNFTMarket is Script {
     function run() external returns (NFTMarket) {
         vm.startBroadcast();
 
-        // Convert the address to the DSCEngine contract type
-        DSCEngine dscEngine = DSCEngine(0xe7f1725E7734CE288F8367e1Bb143E90bb3F0512);
+        // // Convert the address to the DSCEngine contract type
+        // DSCEngine dscEngine = DSCEngine(0xe7f1725E7734CE288F8367e1Bb143E90bb3F0512);
 
-        NFTMarket NFTMarketContract = new NFTMarket(dscEngine);
+        NFTMarket NFTMarketContract = new NFTMarket();
 
         vm.stopBroadcast();
 
